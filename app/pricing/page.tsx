@@ -1,61 +1,144 @@
-import Link from "next/link";
-import { PLANS } from "@/lib/config";
+'use client';
 
-const features = [
-  { key: "signals", label: "Signals / day", values: ["1-3","2-5","3-7"]},
-  { key: "channel", label: "VIP Channel", values: ["—","Yes","Yes"]},
-  { key: "recap", label: "Weekly Recap", values: ["—","Yes","Yes"]},
-  { key: "support", label: "Priority Support", values: ["—","—","Yes"]},
-  { key: "edu", label: "Education Pack", values: ["—","—","Yes"]},
-];
+import { useSearchParams } from 'next/navigation';
+import { ADDRESSES, PLANS, BRAND } from '@/lib/config';
+import { useMemo, useState } from 'react';
 
-export default function Page(){
+type CoinKey = 'USDT_TRC20' | 'USDT_ERC20' | 'BTC' | 'ETH';
+
+export default function Page() {
+  const sp = useSearchParams();
+  const planId = sp.get('plan') ?? 'starter';
+  const plan = useMemo(
+    () => PLANS.find((p) => p.id === planId) ?? PLANS[0],
+    [planId]
+  );
+
+  const [coin, setCoin] = useState<CoinKey>('USDT_TRC20');
+  const address = ADDRESSES[coin];
+  const qr = `/qr/${coin.toLowerCase()}.png`;
+
+  const submit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+
+    const payload = {
+      plan: plan.name,
+      price: plan.price,
+      coin,
+      address,
+      email: String(fd.get('email') || ''),
+      tx: String(fd.get('tx') || ''),
+      contact: String(fd.get('contact') || ''),
+      ts: new Date().toISOString(),
+    };
+
+    try {
+      const res = await fetch('/api/subscribe', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        window.location.href = '/success';
+        return;
+      }
+    } catch {
+      // ignore and fall back to email
+    }
+
+    // Fallback to mailto
+    const subject = encodeURIComponent(`New ${plan.name} subscription`);
+    const body = encodeURIComponent(
+      `Plan: ${plan.name} ($${plan.price}/mo)
+Coin/Network: ${coin}
+Address: ${address}
+TX: ${payload.tx}
+User email: ${payload.email}
+Contact: ${payload.contact}`
+    );
+    window.location.href = `mailto:${BRAND.email}?subject=${subject}&body=${body}`;
+  };
+
   return (
     <section className="my-12">
-      <h1 className="h2">Pricing</h1>
-      <p className="muted mt-2">Simple plans. Crypto-only checkout.</p>
+      <h1 className="h2">Subscribe</h1>
+      <p className="muted mt-2">
+        Selected plan: <strong>{plan.name}</strong> — ${plan.price}/mo
+      </p>
 
-      <div className="grid md:grid-cols-3 gap-6 mt-8">
-        {PLANS.map((p) => (
-          <div key={p.id} className="card p-6 flex flex-col">
-            <h3 className="text-xl font-semibold">{p.name}</h3>
-            <div className="text-4xl font-bold mt-2">
-              ${p.price}
-              <span className="text-base font-normal text-white/70">/mo</span>
-            </div>
-            <ul className="mt-4 space-y-2">
-              {p.features.map((f: string) => (
-                <li key={f} className="flex items-center gap-2">• {f}</li>
-              ))}
-            </ul>
-            <Link href={`/subscribe?plan=${p.id}`} className="btn btn-primary mt-auto">
-              Subscribe
-            </Link>
+      <div className="grid md:grid-cols-2 gap-8 mt-8">
+        <div className="card p-6">
+          <label className="block text-sm mb-2">Choose coin / network</label>
+          <div className="grid grid-cols-2 gap-2">
+            {(['USDT_TRC20', 'USDT_ERC20', 'BTC', 'ETH'] as CoinKey[]).map(
+              (k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setCoin(k)}
+                  className={`btn ${coin === k ? 'btn-primary' : 'btn-ghost'}`}
+                >
+                  {k.replace('_', ' ')}
+                </button>
+              )
+            )}
           </div>
-        ))}
-      </div>
 
-      <div className="card p-6 mt-8 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr>
-              <th className="text-left py-3">Feature</th>
-              {PLANS.map((p) => (
-                <th key={p.id} className="text-left py-3">{p.name}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {features.map((f) => (
-              <tr key={f.key} className="border-t border-white/10">
-                <td className="py-3">{f.label}</td>
-                {f.values.map((v, i) => (
-                  <td key={i} className="py-3">{v}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          <div className="mt-6">
+            <img
+              src={qr}
+              alt="QR code"
+              className="w-40 h-40 rounded-xl border border-white/10"
+            />
+            <div className="mt-3 text-sm">Address</div>
+            <div className="font-mono break-all select-all">{address}</div>
+            <button
+              type="button"
+              onClick={() => navigator.clipboard.writeText(address)}
+              className="btn btn-ghost mt-3"
+            >
+              Copy Address
+            </button>
+          </div>
+        </div>
+
+        <form onSubmit={submit} className="card p-6 space-y-4">
+          <div>
+            <label className="block text-sm mb-2">Email</label>
+            <input
+              name="email"
+              required
+              placeholder="you@email.com"
+              className="w-full bg-black/30 border border-white/15 rounded-xl px-4 py-3"
+            />
+          </div>
+          <div>
+            <label className="block text-sm mb-2">Transaction Hash / Link</label>
+            <input
+              name="tx"
+              required
+              placeholder="Paste TX hash or explorer link"
+              className="w-full bg-black/30 border border-white/15 rounded-xl px-4 py-3"
+            />
+          </div>
+          <div>
+            <label className="block text-sm mb-2">
+              Optional contact (Telegram/WhatsApp)
+            </label>
+            <input
+              name="contact"
+              placeholder="@username or +123..."
+              className="w-full bg-black/30 border border-white/15 rounded-xl px-4 py-3"
+            />
+          </div>
+          <button className="btn btn-primary w-full" type="submit">
+            Submit
+          </button>
+          <p className="text-xs muted">
+            We’ll verify your transaction and activate access. Manual step for
+            now; API route is ready for SMTP integration.
+          </p>
+        </form>
       </div>
     </section>
   );
